@@ -81,7 +81,7 @@
     "vite": "^5.4.19"
   },
   "openserverless": {
-    "devel": "uv --directory /home/app run main.py",
+    "devel": "npm run dev",
     "deploy": "npm run build"
   }
 }
