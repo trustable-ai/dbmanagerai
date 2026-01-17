@@ -3,6 +3,7 @@
 #--param OLLAMA_PROTO $OLLAMA_PROTO
 #--param OLLAMA_HOST $OLLAMA_HOST
 #--param OLLAMA_TOKEN $AUTH
-import llm
+import sllm
+
 def main(args):
-  return { "body": llm.llm(args) }
+  return { "body": sllm.sllm(args) }

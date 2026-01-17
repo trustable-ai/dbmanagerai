@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Accordion,
   AccordionContent,
@@ -9,14 +10,23 @@ import {
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
-type ProcessingStep = "upload" | "cleaning" | "chunking" | "processing" | "storing";
+type ProcessingStep = "upload" | "extract" | "cleaning" | "chunking" | "processing" | "storing";
 
 interface Document {
   id: string;
   name: string;
-  status: "pending" | "processing" | "completed";
+  file: File | null;
+  status: "pending" | "processing" | "completed" | "error";
   currentStep: ProcessingStep | null;
   completedSteps: ProcessingStep[];
+  stepData: {
+    upload?: string; // PDF preview or file info
+    extract?: string; // Extracted text from Tika
+    cleaning?: string; // Cleaned text
+    chunking?: string[]; // Array of chunks
+    processing?: Array<{ user: string; assistant: string }>; // Processed chunks
+    storing?: boolean; // Store result
+  };
 }
 
 const Ingest = () => {
@@ -24,60 +34,336 @@ const Ingest = () => {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [expandedStep, setExpandedStep] = useState<string>("");
 
-  const processingSteps: ProcessingStep[] = ["upload", "cleaning", "chunking", "processing", "storing"];
+  const processingSteps: ProcessingStep[] = ["upload", "extract", "cleaning", "chunking", "processing", "storing"];
 
   const addDocument = () => {
     const newDoc: Document = {
       id: Date.now().toString(),
       name: `Document ${documents.length + 1}`,
+      file: null,
       status: "pending",
       currentStep: null,
       completedSteps: [],
+      stepData: {},
     };
     setDocuments((prev) => [...prev, newDoc]);
     toast.success("Document added. Click 'Upload' to start processing.");
   };
 
-  const simulateStepProcessing = async (docId: string, step: ProcessingStep) => {
-    return new Promise<void>((resolve) => {
-      setTimeout(() => {
-        setDocuments((prev) =>
-          prev.map((doc) =>
-            doc.id === docId
-              ? {
-                  ...doc,
-                  completedSteps: [...doc.completedSteps, step],
-                  currentStep: null,
-                }
-              : doc
-          )
-        );
-        resolve();
-      }, 1000);
-    });
-  };
-
-  const startProcessing = async (docId: string) => {
-    const doc = documents.find((d) => d.id === docId);
-    if (!doc) return;
-
-    setDocuments((prev) =>
-      prev.map((d) => (d.id === docId ? { ...d, status: "processing" as const } : d))
-    );
-
-    for (const step of processingSteps) {
-      if (!doc.completedSteps.includes(step)) {
-        setDocuments((prev) =>
-          prev.map((d) => (d.id === docId ? { ...d, currentStep: step } : d))
-        );
-        await simulateStepProcessing(docId, step);
-      }
+  const handleFileUpload = async (docId: string, file: File) => {
+    if (!file || file.type !== 'application/pdf') {
+      toast.error("Please upload a PDF file");
+      return;
     }
 
     setDocuments((prev) =>
-      prev.map((d) => (d.id === docId ? { ...d, status: "completed" as const } : d))
+      prev.map((doc) =>
+        doc.id === docId
+          ? {
+              ...doc,
+              file,
+              name: file.name,
+              currentStep: "upload" as const,
+              status: "processing" as const,
+            }
+          : doc
+      )
     );
-    toast.success("Document processing completed!");
+
+    // Create preview URL for the PDF
+    const previewUrl = URL.createObjectURL(file);
+
+    // Store file reference - actual S3 upload will happen during extract
+    setDocuments((prev) =>
+      prev.map((doc) =>
+        doc.id === docId
+          ? {
+              ...doc,
+              completedSteps: ["upload"],
+              currentStep: null,
+              status: "pending" as const,
+              stepData: {
+                ...doc.stepData,
+                upload: previewUrl,
+              },
+            }
+          : doc
+      )
+    );
+    toast.success("File ready for extraction");
+  };
+
+  const executeExtract = async (docId: string) => {
+    const doc = documents.find((d) => d.id === docId);
+    if (!doc || !doc.file) {
+      toast.error("No file uploaded");
+      return;
+    }
+
+    setDocuments((prev) =>
+      prev.map((d) => (d.id === docId ? { ...d, currentStep: "extract" as const, status: "processing" as const } : d))
+    );
+
+    try {
+      // Upload file as base64 to backend along with ingest request
+      const reader = new FileReader();
+
+      reader.onload = async (e) => {
+        try {
+          const base64Data = e.target?.result as string;
+          const base64Content = base64Data.split(',')[1]; // Remove data:application/pdf;base64, prefix
+
+          const filename = `uploads/${Date.now()}_${doc.file!.name}`;
+
+          // Call rag/ingest endpoint which will handle S3 upload and Tika extraction
+          const response = await fetch('/api/my/rag/ingest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              filename: filename,
+              fileContent: base64Content
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          const data = await response.json();
+
+          if (data.error) {
+            throw new Error(data.error);
+          }
+
+          const extractedText = data.output;
+
+          setDocuments((prev) =>
+            prev.map((d) =>
+              d.id === docId
+                ? {
+                    ...d,
+                    completedSteps: [...d.completedSteps, "extract"],
+                    currentStep: null,
+                    status: "pending" as const,
+                    stepData: { ...d.stepData, extract: extractedText },
+                  }
+                : d
+            )
+          );
+          toast.success("Text extracted successfully");
+        } catch (error) {
+          setDocuments((prev) =>
+            prev.map((d) => (d.id === docId ? { ...d, currentStep: null, status: "error" as const } : d))
+          );
+          toast.error(error instanceof Error ? error.message : "Failed to extract text");
+        }
+      };
+
+      reader.onerror = () => {
+        setDocuments((prev) =>
+          prev.map((d) => (d.id === docId ? { ...d, currentStep: null, status: "error" as const } : d))
+        );
+        toast.error("Failed to read file");
+      };
+
+      reader.readAsDataURL(doc.file);
+    } catch (error) {
+      setDocuments((prev) =>
+        prev.map((d) => (d.id === docId ? { ...d, currentStep: null, status: "error" as const } : d))
+      );
+      toast.error(error instanceof Error ? error.message : "Failed to extract text");
+    }
+  };
+
+  const executeCleaning = async (docId: string) => {
+    const doc = documents.find((d) => d.id === docId);
+    if (!doc || !doc.stepData.extract) {
+      toast.error("No extracted text available");
+      return;
+    }
+
+    setDocuments((prev) =>
+      prev.map((d) => (d.id === docId ? { ...d, currentStep: "cleaning" as const, status: "processing" as const } : d))
+    );
+
+    try {
+      const response = await fetch('/api/my/rag/clean', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: doc.stepData.extract }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const cleanedText = data.output;
+
+      setDocuments((prev) =>
+        prev.map((d) =>
+          d.id === docId
+            ? {
+                ...d,
+                completedSteps: [...d.completedSteps, "cleaning"],
+                currentStep: null,
+                status: "pending" as const,
+                stepData: { ...d.stepData, cleaning: cleanedText },
+              }
+            : d
+        )
+      );
+      toast.success("Document cleaned successfully");
+    } catch (error) {
+      setDocuments((prev) =>
+        prev.map((d) => (d.id === docId ? { ...d, currentStep: null, status: "error" as const } : d))
+      );
+      toast.error(error instanceof Error ? error.message : "Failed to clean document");
+    }
+  };
+
+  const executeChunking = async (docId: string) => {
+    const doc = documents.find((d) => d.id === docId);
+    if (!doc || !doc.stepData.cleaning) {
+      toast.error("No cleaned text available");
+      return;
+    }
+
+    setDocuments((prev) =>
+      prev.map((d) => (d.id === docId ? { ...d, currentStep: "chunking" as const, status: "processing" as const } : d))
+    );
+
+    try {
+      const response = await fetch('/api/my/rag/chunk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: doc.stepData.cleaning }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const chunks = data.output;
+
+      setDocuments((prev) =>
+        prev.map((d) =>
+          d.id === docId
+            ? {
+                ...d,
+                completedSteps: [...d.completedSteps, "chunking"],
+                currentStep: null,
+                status: "pending" as const,
+                stepData: { ...d.stepData, chunking: chunks },
+              }
+            : d
+        )
+      );
+      toast.success(`Document chunked into ${chunks.length} chunks`);
+    } catch (error) {
+      setDocuments((prev) =>
+        prev.map((d) => (d.id === docId ? { ...d, currentStep: null, status: "error" as const } : d))
+      );
+      toast.error(error instanceof Error ? error.message : "Failed to chunk document");
+    }
+  };
+
+  const executeProcessing = async (docId: string) => {
+    const doc = documents.find((d) => d.id === docId);
+    if (!doc || !doc.stepData.chunking || doc.stepData.chunking.length === 0) {
+      toast.error("No chunks available");
+      return;
+    }
+
+    setDocuments((prev) =>
+      prev.map((d) => (d.id === docId ? { ...d, currentStep: "processing" as const, status: "processing" as const } : d))
+    );
+
+    try {
+      const processedChunks = [];
+
+      for (const chunk of doc.stepData.chunking) {
+        const response = await fetch('/api/my/rag/process', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ input: chunk }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        processedChunks.push(data);
+      }
+
+      setDocuments((prev) =>
+        prev.map((d) =>
+          d.id === docId
+            ? {
+                ...d,
+                completedSteps: [...d.completedSteps, "processing"],
+                currentStep: null,
+                status: "pending" as const,
+                stepData: { ...d.stepData, processing: processedChunks },
+              }
+            : d
+        )
+      );
+      toast.success(`Processed ${processedChunks.length} chunks`);
+    } catch (error) {
+      setDocuments((prev) =>
+        prev.map((d) => (d.id === docId ? { ...d, currentStep: null, status: "error" as const } : d))
+      );
+      toast.error(error instanceof Error ? error.message : "Failed to process chunks");
+    }
+  };
+
+  const executeStoring = async (docId: string) => {
+    const doc = documents.find((d) => d.id === docId);
+    if (!doc || !doc.stepData.processing) {
+      toast.error("No processed chunks available");
+      return;
+    }
+
+    setDocuments((prev) =>
+      prev.map((d) => (d.id === docId ? { ...d, currentStep: "storing" as const, status: "processing" as const } : d))
+    );
+
+    try {
+      const response = await fetch('/api/my/rag/store', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: doc.stepData.processing }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      setDocuments((prev) =>
+        prev.map((d) =>
+          d.id === docId
+            ? {
+                ...d,
+                completedSteps: [...d.completedSteps, "storing"],
+                currentStep: null,
+                status: "completed" as const,
+                stepData: { ...d.stepData, storing: data.output },
+              }
+            : d
+        )
+      );
+      toast.success("Document stored successfully");
+    } catch (error) {
+      setDocuments((prev) =>
+        prev.map((d) => (d.id === docId ? { ...d, currentStep: null, status: "error" as const } : d))
+      );
+      toast.error(error instanceof Error ? error.message : "Failed to store document");
+    }
   };
 
   const resetStepsAfter = (docId: string, clickedStep: ProcessingStep) => {
@@ -245,31 +531,167 @@ const Ingest = () => {
                             </div>
                           </AccordionTrigger>
                           <AccordionContent className="px-4">
-                            <div className="text-sm text-muted-foreground py-2">
+                            <div className="py-2 space-y-3">
                               {step === "upload" && (
                                 <div>
-                                  <p className="mb-3">Upload your document to begin processing.</p>
-                                  {!isCompleted && doc.status === "pending" && (
-                                    <Button
-                                      size="sm"
-                                      onClick={() => startProcessing(doc.id)}
-                                    >
-                                      Start Upload
+                                  <p className="text-sm text-muted-foreground mb-3">Upload a PDF document to begin processing.</p>
+                                  {!isCompleted && (
+                                    <Input
+                                      type="file"
+                                      accept=".pdf"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) handleFileUpload(doc.id, file);
+                                      }}
+                                      className="mb-2"
+                                    />
+                                  )}
+                                  {isCompleted && doc.stepData.upload && (
+                                    <div className="space-y-3">
+                                      <div className="p-3 bg-muted rounded text-sm">
+                                        <p className="font-semibold">{doc.name}</p>
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                          Size: {doc.file ? (doc.file.size / 1024).toFixed(2) : '0'} KB
+                                        </p>
+                                      </div>
+                                      <div className="border rounded overflow-hidden">
+                                        <iframe
+                                          src={doc.stepData.upload}
+                                          className="w-full h-96"
+                                          title={`PDF Preview: ${doc.name}`}
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {step === "extract" && (
+                                <div>
+                                  <p className="text-sm text-muted-foreground mb-3">Extract text from PDF using Tika server.</p>
+                                  {!isCompleted && doc.completedSteps.includes("upload") && (
+                                    <Button size="sm" onClick={() => executeExtract(doc.id)}>
+                                      Extract Text
                                     </Button>
+                                  )}
+                                  {isCompleted && doc.stepData.extract && (
+                                    <div className="p-3 bg-muted rounded text-sm max-h-64 overflow-y-auto whitespace-pre-wrap">
+                                      {doc.stepData.extract}
+                                    </div>
                                   )}
                                 </div>
                               )}
                               {step === "cleaning" && (
-                                <p>Removing unnecessary characters and formatting from the document.</p>
+                                <div>
+                                  <p className="text-sm text-muted-foreground mb-3">Clean the extracted text.</p>
+                                  {!isCompleted && doc.completedSteps.includes("extract") && (
+                                    <Button size="sm" onClick={() => executeCleaning(doc.id)}>
+                                      Clean Document
+                                    </Button>
+                                  )}
+                                  {isCompleted && doc.stepData.cleaning && (
+                                    <div className="p-3 bg-muted rounded text-sm max-h-64 overflow-y-auto whitespace-pre-wrap">
+                                      {doc.stepData.cleaning}
+                                    </div>
+                                  )}
+                                </div>
                               )}
                               {step === "chunking" && (
-                                <p>Splitting document into manageable chunks for better processing.</p>
+                                <div>
+                                  <p className="text-sm text-muted-foreground mb-3">Split document into chunks with 100-token overlap.</p>
+                                  {!isCompleted && doc.completedSteps.includes("cleaning") && (
+                                    <Button size="sm" onClick={() => executeChunking(doc.id)}>
+                                      Chunk Document
+                                    </Button>
+                                  )}
+                                  {isCompleted && doc.stepData.chunking && (
+                                    <div className="space-y-3">
+                                      <p className="text-sm font-medium">
+                                        {doc.stepData.chunking.length} chunks created (500 tokens each, 100-token overlap)
+                                      </p>
+                                      <div className="max-h-96 overflow-y-auto space-y-4">
+                                        {doc.stepData.chunking.map((chunk, idx) => {
+                                          const tokens = chunk.split(' ');
+                                          const prevChunk = idx > 0 ? doc.stepData.chunking[idx - 1] : null;
+
+                                          // Calculate overlap for highlighting
+                                          let overlapStart = 0;
+                                          if (prevChunk) {
+                                            const prevTokens = prevChunk.split(' ');
+                                            const overlapTokens = Math.min(100, prevTokens.length);
+                                            const prevOverlap = prevTokens.slice(-overlapTokens).join(' ');
+                                            const currentStart = tokens.slice(0, overlapTokens).join(' ');
+                                            if (prevOverlap === currentStart) {
+                                              overlapStart = overlapTokens;
+                                            }
+                                          }
+
+                                          return (
+                                            <div key={idx} className="border-l-4 border-blue-500 bg-card rounded-r shadow-sm">
+                                              <div className="bg-blue-50 px-4 py-2 border-b">
+                                                <div className="flex items-center justify-between">
+                                                  <span className="font-semibold text-blue-900">Chunk {idx + 1}</span>
+                                                  <span className="text-xs text-blue-700">
+                                                    {tokens.length} tokens
+                                                    {overlapStart > 0 && ` • ${overlapStart} overlap`}
+                                                  </span>
+                                                </div>
+                                              </div>
+                                              <div className="p-4 text-sm">
+                                                {overlapStart > 0 && (
+                                                  <>
+                                                    <span className="bg-yellow-200 px-1 rounded">
+                                                      {tokens.slice(0, overlapStart).join(' ')}
+                                                    </span>
+                                                    <span> {tokens.slice(overlapStart).join(' ')}</span>
+                                                  </>
+                                                )}
+                                                {overlapStart === 0 && chunk}
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
                               )}
                               {step === "processing" && (
-                                <p>Analyzing and extracting meaningful information from chunks.</p>
+                                <div>
+                                  <p className="text-sm text-muted-foreground mb-3">Process chunks for Q&A pairs.</p>
+                                  {!isCompleted && doc.completedSteps.includes("chunking") && (
+                                    <Button size="sm" onClick={() => executeProcessing(doc.id)}>
+                                      Process Chunks
+                                    </Button>
+                                  )}
+                                  {isCompleted && doc.stepData.processing && (
+                                    <div className="space-y-2">
+                                      <p className="text-sm font-medium">{doc.stepData.processing.length} chunks processed:</p>
+                                      <div className="max-h-64 overflow-y-auto space-y-2">
+                                        {doc.stepData.processing.map((item, idx) => (
+                                          <div key={idx} className="p-3 bg-muted rounded text-sm">
+                                            <p><span className="font-semibold">Q:</span> {item.user}</p>
+                                            <p className="mt-1"><span className="font-semibold">A:</span> {item.assistant}</p>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
                               )}
                               {step === "storing" && (
-                                <p>Storing processed data in the vector database for retrieval.</p>
+                                <div>
+                                  <p className="text-sm text-muted-foreground mb-3">Store processed data in vector database.</p>
+                                  {!isCompleted && doc.completedSteps.includes("processing") && (
+                                    <Button size="sm" onClick={() => executeStoring(doc.id)}>
+                                      Store Document
+                                    </Button>
+                                  )}
+                                  {isCompleted && (
+                                    <div className="p-3 bg-green-50 rounded text-sm text-green-800">
+                                      ✓ Document successfully stored in vector database
+                                    </div>
+                                  )}
+                                </div>
                               )}
                             </div>
                           </AccordionContent>

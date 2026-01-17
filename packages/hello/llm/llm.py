@@ -1,14 +1,15 @@
 import os, requests as req
-MODEL="llama3.1:8b"
+MODEL="phi4:14b"
 
 url = None
 
 def llm(args):
   global url
   if  url is None:
+    proto = args.get("OLLAMA_PROTO", os.getenv("OLLAMA_PROTO","https"))
     host = args.get("OLLAMA_HOST", os.getenv("OLLAMA_HOST"))
     auth = args.get("OLLAMA_TOKEN", os.getenv("AUTH"))
-    url =  f"https://{auth}@{host}/api/generate"
+    url =  f"{proto}://{auth}@{host}/api/generate"
   out = f"Welcome to {MODEL}"
   inp = args.get("input")
   if inp:
