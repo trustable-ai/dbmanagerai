@@ -10,6 +10,76 @@ interface Message {
   content: string;
 }
 
+// Simple markdown renderer for basic formatting
+const renderMarkdown = (text: string): JSX.Element => {
+  // Process code blocks first (```code```)
+  const parts: (string | JSX.Element)[] = [];
+  let lastIndex = 0;
+  const codeBlockRegex = /```(\w*)\n?([\s\S]*?)```/g;
+  let match;
+
+  while ((match = codeBlockRegex.exec(text)) !== null) {
+    // Add text before code block
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    // Add code block
+    const code = match[2];
+    parts.push(
+      <pre key={match.index} className="bg-muted/50 rounded p-3 my-2 overflow-x-auto">
+        <code className="text-sm">{code}</code>
+      </pre>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  // Add remaining text
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  // Process inline elements for text parts
+  const processInline = (str: string, key: number): JSX.Element => {
+    // Process inline code (`code`)
+    let processed = str.split(/`([^`]+)`/).map((part, i) =>
+      i % 2 === 1 ? <code key={i} className="bg-muted/50 px-1 rounded text-sm">{part}</code> : part
+    );
+
+    // Process bold (**text**)
+    processed = processed.flatMap((part, i) => {
+      if (typeof part !== "string") return part;
+      return part.split(/\*\*([^*]+)\*\*/).map((p, j) =>
+        j % 2 === 1 ? <strong key={`${i}-${j}`}>{p}</strong> : p
+      );
+    });
+
+    // Process italic (*text* or _text_)
+    processed = processed.flatMap((part, i) => {
+      if (typeof part !== "string") return part;
+      return part.split(/(?<!\*)\*([^*]+)\*(?!\*)/).map((p, j) =>
+        j % 2 === 1 ? <em key={`${i}-${j}-em`}>{p}</em> : p
+      );
+    });
+
+    return <span key={key}>{processed}</span>;
+  };
+
+  return (
+    <div className="space-y-1">
+      {parts.map((part, i) =>
+        typeof part === "string" ? (
+          <div key={i}>
+            {part.split("\n").map((line, j) => (
+              <div key={j}>{processInline(line, j) || <br />}</div>
+            ))}
+          </div>
+        ) : (
+          part
+        )
+      )}
+    </div>
+  );
+};
+
 const Index = () => {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -35,34 +105,94 @@ const Index = () => {
       content: inputValue.trim(),
     };
 
+    // Build conversation history for API
+    const history = [...messages, userMessage].map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
     setMessages((prev) => [...prev, userMessage]);
     setInputValue("");
     setIsLoading(true);
 
+    // Create placeholder for assistant message
+    const assistantId = Date.now() + 1;
+    setMessages((prev) => [
+      ...prev,
+      { id: assistantId, role: "assistant", content: "" },
+    ]);
+
     try {
-      const response = await fetch("/api/my/chat/chat", {
+      const streamUrl = import.meta.env.VITE_STREAM || "";
+      const endpoint = streamUrl ? `${streamUrl}v1/chat` : "/api/my/v1/chat";
+
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ input: userMessage.content }),
+        body: JSON.stringify({ input: history }),
       });
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const data = await response.json();
-      const assistantMessage: Message = {
-        id: Date.now() + 1,
-        role: "assistant",
-        content: data.output || data.message || "No response received",
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("No response body");
+      }
+
+      const decoder = new TextDecoder();
+      let accumulated = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        // Parse streaming JSON objects - each chunk is {"output": "..."}
+        const jsonMatches = chunk.match(/\{"output":\s*"[^"]*"\}/g);
+        if (jsonMatches) {
+          for (const jsonStr of jsonMatches) {
+            try {
+              const parsed = JSON.parse(jsonStr);
+              if (parsed.output) {
+                accumulated += parsed.output;
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId ? { ...m, content: accumulated } : m
+                  )
+                );
+              }
+            } catch {
+              // Skip invalid JSON
+            }
+          }
+        }
+      }
+
+      // If no streaming content received, try to parse as regular JSON response
+      if (!accumulated) {
+        const text = decoder.decode();
+        try {
+          const data = JSON.parse(text);
+          accumulated = data.output || data.message || "No response received";
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId ? { ...m, content: accumulated } : m
+            )
+          );
+        } catch {
+          // Keep empty if nothing parsed
+        }
+      }
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to send message"
       );
+      // Remove empty assistant message on error
+      setMessages((prev) => prev.filter((m) => m.content !== ""));
     } finally {
       setIsLoading(false);
     }
@@ -119,11 +249,15 @@ const Index = () => {
                       : "bg-muted text-foreground"
                   }`}
                 >
-                  <p className="whitespace-pre-wrap">{message.content}</p>
+                  {message.role === "assistant" ? (
+                    renderMarkdown(message.content)
+                  ) : (
+                    <p className="whitespace-pre-wrap">{message.content}</p>
+                  )}
                 </div>
               </div>
             ))}
-            {isLoading && (
+            {isLoading && messages[messages.length - 1]?.content === "" && (
               <div className="flex justify-start">
                 <div className="max-w-[80%] rounded-lg bg-muted px-4 py-2">
                   <div className="flex space-x-1">

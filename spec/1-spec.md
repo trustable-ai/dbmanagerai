@@ -1,6 +1,6 @@
 I want the home page to be 
 the user interface of a chatbot
-with an Ingest
+with an Ingest button
 showing an UI for ingesting documents
 
 You click add and it shows a separate ingestion page with an accordion to 
@@ -28,14 +28,12 @@ Clicking on chunking will process the cleaned document
 invoking rag/chunk and shows the chunked document
 as a sequence of different chunks
 
-Clicking on processing will process the chunks one by one document
-invoking rag/process and shows the processed chunks
+Clicking on processing will process the chunks one by one document invoking rag/process and shows the processed chunks
 
 Clicking on store will store the document invokig
 rag/store
 
-You can repeat the steps and if you execute a precedent steip
-it will clean all the successive steps
+You can repeat the steps and if you execute a precedent steip it will clean all the successive steps
 
 
 

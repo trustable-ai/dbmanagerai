@@ -59,13 +59,19 @@ Two types of tests for each action:
 
 1. **Unit Tests** (`tests/<package>/test_<action>.py`):
    - Import and call action function directly
-   - Use testcontainers for dependencies (Postgres, Redis, Milvus, MinIO)
+   - Mock services
    - Can run in isolation
 
 2. **Integration Tests** (`tests/<package>/test_<action>_int.py`):
-   - Make HTTP requests to deployed endpoints
-   - Use `OPSDEV_HOST` environment variable
    - **Must redeploy action before running**: `ops ide deploy <package>/<action>`
+   - Make HTTP requests to deployed endpoints
+   - Use `OPSDEV_HOST` environment variable + "/api/my/" + package+ "/"  +action for invoking actions
+   - Use  
+   ```
+   username = os.getenv("OPSDEV_USERNAME")
+   os.getenv("OPSDEV_HOST").replace(f"/{username}.", "/stream.")+f"/web/{username}" + package + "/" + action  
+   ```
+   for invoking streaming and use requests with POSTS and stream=True 
 
 ## Development Commands
 

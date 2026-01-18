@@ -42,6 +42,8 @@ def stream(args):
     u = streamer("hello/sllm")
     msg = { "input": "capital of italy"  }
     lines = req.post(u, json=msg, stream=True).iter_lines()
+    for line in lines:
+        print(line)
 
 
     from urllib3 import parse, unparse
