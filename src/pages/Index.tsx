@@ -86,6 +86,7 @@ const Index = () => {
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -99,14 +100,15 @@ const Index = () => {
     e.preventDefault();
     if (!inputValue.trim() || isLoading) return;
 
+    const userInput = inputValue.trim();
     const userMessage: Message = {
       id: Date.now(),
       role: "user",
-      content: inputValue.trim(),
+      content: userInput,
     };
 
-    // Build conversation history for API
-    const history = [...messages, userMessage].map((m) => ({
+    // Build conversation history from existing messages (before adding current user message)
+    const history = messages.map((m) => ({
       role: m.role,
       content: m.content,
     }));
@@ -122,16 +124,23 @@ const Index = () => {
       { id: assistantId, role: "assistant", content: "" },
     ]);
 
+    // Create abort controller for stopping the stream
+    abortControllerRef.current = new AbortController();
+
     try {
       const streamUrl = import.meta.env.VITE_STREAM || "";
-      const endpoint = streamUrl ? `${streamUrl}v1/chat` : "/api/my/v1/chat";
+      const endpoint = streamUrl ? `${streamUrl}/web/truchat/v1/chat` : "/api/my/v1/chat";
 
       const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ input: history }),
+        body: JSON.stringify({
+          input: userInput,
+          messages: history
+        }),
+        signal: abortControllerRef.current.signal,
       });
 
       if (!response.ok) {
@@ -151,23 +160,23 @@ const Index = () => {
         if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
-        // Parse streaming JSON objects - each chunk is {"output": "..."}
-        const jsonMatches = chunk.match(/\{"output":\s*"[^"]*"\}/g);
-        if (jsonMatches) {
-          for (const jsonStr of jsonMatches) {
-            try {
-              const parsed = JSON.parse(jsonStr);
-              if (parsed.output) {
-                accumulated += parsed.output;
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantId ? { ...m, content: accumulated } : m
-                  )
-                );
-              }
-            } catch {
-              // Skip invalid JSON
+        // Parse streaming JSON - each chunk is a JSON string like "Hello"
+        // Split by newlines and parse each line
+        const lines = chunk.split('\n').filter(line => line.trim());
+        for (const line of lines) {
+          try {
+            const parsed = JSON.parse(line);
+            // The parsed result is just the string content
+            if (typeof parsed === 'string') {
+              accumulated += parsed;
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId ? { ...m, content: accumulated } : m
+                )
+              );
             }
+          } catch {
+            // Skip invalid JSON
           }
         }
       }
@@ -188,13 +197,27 @@ const Index = () => {
         }
       }
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to send message"
-      );
-      // Remove empty assistant message on error
-      setMessages((prev) => prev.filter((m) => m.content !== ""));
+      // Don't show error toast if user aborted the request
+      if (error instanceof Error && error.name === "AbortError") {
+        // Request was aborted by user, keep the partial response
+      } else {
+        toast.error(
+          error instanceof Error ? error.message : "Failed to send message"
+        );
+        // Remove empty assistant message on error
+        setMessages((prev) => prev.filter((m) => m.content !== ""));
+      }
     } finally {
       setIsLoading(false);
+      abortControllerRef.current = null;
+    }
+  };
+
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      setIsLoading(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -275,35 +298,48 @@ const Index = () => {
 
       {/* Input Area */}
       <div className="border-t p-4">
-        <form
-          onSubmit={handleSendMessage}
-          className="mx-auto flex max-w-3xl gap-2"
-        >
-          <Input
-            type="text"
-            placeholder="Type your message..."
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            disabled={isLoading}
-            className="flex-1"
-          />
-          <Button type="submit" disabled={isLoading || !inputValue.trim()}>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="m22 2-7 20-4-9-9-4Z" />
-              <path d="M22 2 11 13" />
-            </svg>
-          </Button>
-        </form>
+        <div className="mx-auto max-w-3xl space-y-2">
+          {isLoading && (
+            <div className="flex justify-center">
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleStopGeneration}
+              >
+                Stop
+              </Button>
+            </div>
+          )}
+          <form
+            onSubmit={handleSendMessage}
+            className="flex gap-2"
+          >
+            <Input
+              type="text"
+              placeholder="Type your message..."
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              disabled={isLoading}
+              className="flex-1"
+            />
+            <Button type="submit" disabled={isLoading || !inputValue.trim()}>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="m22 2-7 20-4-9-9-4Z" />
+                <path d="M22 2 11 13" />
+              </svg>
+            </Button>
+          </form>
+        </div>
       </div>
     </div>
   );
