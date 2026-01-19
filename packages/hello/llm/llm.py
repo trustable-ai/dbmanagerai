@@ -1,5 +1,5 @@
 import os, requests as req
-MODEL="phi4:14b"
+MODEL="llama3.2:3b"
 
 url = None
 

@@ -1,9 +1,11 @@
 #--kind python:default
 #--web true
-#--param OPENAI_BASE_URL $OPENAI_BASE_URL
-#--param OPENAI_API_KEY $OPENAI_API_KEY
-#--param OPENAI_MODEL $OPENAI_MODEL
-import chat
+#--timeout 600000
+#--param VERSION "$VITE_VERSION"
+#--param OPENAI_API_KEY "$OPENAI_API_KEY"
+#--param OPENAI_BASE_URL "$OPENAI_BASE_URL"
+#--param OPENAI_MODEL "$OPENAI_MODEL"
 
+import chat
 def main(args):
   return { "body": chat.chat(args) }

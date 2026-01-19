@@ -1,25 +1,11 @@
 import sys
-sys.path.append("packages/v1/chat")
-import chat
+sys.path.append("packages/v1/chat1")
+import llm
 import os
 
-def test_chat_no_input():
+def test_llm():
     args = {}
-    result = chat.chat(args)
-    assert result["output"] == "No input provided"
-    assert result["streaming"] == False
-
-def test_chat_with_input():
-    args = {
-        "OPENAI_BASE_URL": os.getenv("OPENAI_BASE_URL", ""),
-        "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", ""),
-        "OPENAI_MODEL": os.getenv("OPENAI_MODEL", "gpt-4"),
-        "input": [
-            {"role": "user", "content": "Say hello in one word"}
-        ]
-    }
-    if not args["OPENAI_BASE_URL"] or not args["OPENAI_API_KEY"]:
-        return
-    result = chat.chat(args)
-    assert "output" in result
-    assert result["streaming"] == True
+    c = llm.LLM(args)
+    c.welcome(args)
+    c.ask(args, "hello")
+    c.ask(args, "about Wizxenzy")
