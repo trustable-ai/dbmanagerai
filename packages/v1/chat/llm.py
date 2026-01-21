@@ -1,22 +1,24 @@
 from openai import OpenAI
 import os, socket, time, json, pathlib
 
+# load the instruction file
+# the file format is:
 def loader(file):
     abs_path = os.path.abspath(__file__)
     current_dir = os.path.dirname(abs_path)
     path =  pathlib.Path(os.path.join(current_dir, file))
     text = path.read_text()
-    lines = text.split("\n\n")
+    lines = text.split("\n")
     res = []
     for line in lines:
-        role = "assistant"
-        if line.startswith("!"):
-            role = "system"
-            line = line[1:]
-        if line.startswith("?"):
-            role = "user"
-            line = line[1:]
-        res.append({"role":role,"content":line})
+        try:
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            res.append(json.loads(line))
+        except:
+            print("error parsing line:", line)
+    print(f"loaded #{len(res)} instructions from {file}")
     return res
 
 class LLM:
@@ -29,7 +31,7 @@ class LLM:
         # urls
         self.ai = OpenAI(base_url=self.base_url, api_key=self.api_key)
 
-        self.instruct = loader("doc.txt")
+        self.instruct = loader("doc.jsonl")
         print(self.model)
         print(self.instruct)
 
@@ -69,6 +71,8 @@ class LLM:
 
     def _ask(self, inp):
         self.messages.append({"role": "user", "content": inp})
+        for msg in self.messages:
+            print(f"{msg['role']}: {msg['content']}")
         stream = self.ai.chat.completions.create(
             model=self.model,
             messages=self.messages,
