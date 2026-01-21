@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
 
 interface Message {
   id: number;
@@ -81,7 +80,6 @@ const renderMarkdown = (text: string): JSX.Element => {
 };
 
 const Index = () => {
-  const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -226,25 +224,6 @@ const Index = () => {
       {/* Header */}
       <header className="flex items-center justify-between border-b px-4 py-3">
         <h1 className="text-xl font-semibold text-foreground">TruChat</h1>
-        <Button variant="outline" size="sm" onClick={() => navigate("/ingest")}>
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="mr-2"
-          >
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="17 8 12 3 7 8" />
-            <line x1="12" x2="12" y1="3" y2="15" />
-          </svg>
-          Ingest
-        </Button>
       </header>
 
       {/* Messages Area */}

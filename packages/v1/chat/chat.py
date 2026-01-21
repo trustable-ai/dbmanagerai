@@ -9,7 +9,7 @@ def dump(args):
           print(f"  {key}: {args[key]}")
 
 def chat(args):
-  #dump(args)
+  dump(args)
   inp = args.get("input", "")
 
   try:
