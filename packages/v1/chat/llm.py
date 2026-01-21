@@ -42,7 +42,9 @@ class LLM:
             self.messages += self.context
 
     def welcome(self, args):
-        return self.text(args, f"Welcome to TruGPT\nHost:{self.base_url}\nModel:{self.model}")
+        text = f"Welcome to TruGPT\nHost:{self.base_url}\nModel:{self.model}\n"
+        text += f"RAG has #{len(self.instruct)} instructions.\n"
+        return self.text(args, text)
 
     def message(self, role, content):
         self.messages.append({"role": role, "content":content})
@@ -71,8 +73,7 @@ class LLM:
 
     def _ask(self, inp):
         self.messages.append({"role": "user", "content": inp})
-        for msg in self.messages:
-            print(f"{msg['role']}: {msg['content']}")
+        print("context: {len(self.context)}\ninstruct: {len(self.instruct)}\nnmessages: {len(self.messages)}")
         stream = self.ai.chat.completions.create(
             model=self.model,
             messages=self.messages,
@@ -96,3 +97,10 @@ class LLM:
 
     def text(self, args, lines):
         return self.stream(args, self._text(lines))
+
+    def _rag(self, args):
+        for msg in self.instruct:
+            yield f"- *{msg['role'].capitalize()}*: {msg['content']}\n"
+
+    def rag(self, args):
+        return self.stream(args, self._rag(args))

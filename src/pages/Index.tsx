@@ -2,82 +2,19 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { marked } from "marked";
+
+// Configure marked with tables enabled
+marked.setOptions({
+  gfm: true, // GitHub Flavored Markdown (includes tables)
+  breaks: true,
+});
 
 interface Message {
   id: number;
   role: "user" | "assistant";
   content: string;
 }
-
-// Simple markdown renderer for basic formatting
-const renderMarkdown = (text: string): JSX.Element => {
-  // Process code blocks first (```code```)
-  const parts: (string | JSX.Element)[] = [];
-  let lastIndex = 0;
-  const codeBlockRegex = /```(\w*)\n?([\s\S]*?)```/g;
-  let match;
-
-  while ((match = codeBlockRegex.exec(text)) !== null) {
-    // Add text before code block
-    if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index));
-    }
-    // Add code block
-    const code = match[2];
-    parts.push(
-      <pre key={match.index} className="bg-muted/50 rounded p-3 my-2 overflow-x-auto">
-        <code className="text-sm">{code}</code>
-      </pre>
-    );
-    lastIndex = match.index + match[0].length;
-  }
-  // Add remaining text
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex));
-  }
-
-  // Process inline elements for text parts
-  const processInline = (str: string, key: number): JSX.Element => {
-    // Process inline code (`code`)
-    let processed = str.split(/`([^`]+)`/).map((part, i) =>
-      i % 2 === 1 ? <code key={i} className="bg-muted/50 px-1 rounded text-sm">{part}</code> : part
-    );
-
-    // Process bold (**text**)
-    processed = processed.flatMap((part, i) => {
-      if (typeof part !== "string") return part;
-      return part.split(/\*\*([^*]+)\*\*/).map((p, j) =>
-        j % 2 === 1 ? <strong key={`${i}-${j}`}>{p}</strong> : p
-      );
-    });
-
-    // Process italic (*text* or _text_)
-    processed = processed.flatMap((part, i) => {
-      if (typeof part !== "string") return part;
-      return part.split(/(?<!\*)\*([^*]+)\*(?!\*)/).map((p, j) =>
-        j % 2 === 1 ? <em key={`${i}-${j}-em`}>{p}</em> : p
-      );
-    });
-
-    return <span key={key}>{processed}</span>;
-  };
-
-  return (
-    <div className="space-y-1">
-      {parts.map((part, i) =>
-        typeof part === "string" ? (
-          <div key={i}>
-            {part.split("\n").map((line, j) => (
-              <div key={j}>{processInline(line, j) || <br />}</div>
-            ))}
-          </div>
-        ) : (
-          part
-        )
-      )}
-    </div>
-  );
-};
 
 const Index = () => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -125,7 +62,7 @@ const Index = () => {
 
     try {
       const streamUrl = import.meta.env.VITE_STREAM || "";
-      const endpoint = streamUrl ? `${streamUrl}/web/truchat/v1/chat` : "/api/my/v1/chat";
+      const endpoint = streamUrl ? `${streamUrl}/web/truchat/v1/chat` : "/web/truchat/v1/chat";
 
       const response = await fetch(endpoint, {
         method: "POST",
@@ -238,11 +175,42 @@ const Index = () => {
     }
   };
 
+  const handleReset = () => {
+    if (isLoading && abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setMessages([]);
+    setIsLoading(false);
+    // Send initial request with empty input
+    setTimeout(() => sendChatRequest("", [], false), 0);
+  };
+
+  const handleRAG = async () => {
+    if (isLoading) return;
+    // Build conversation history from existing messages
+    const history = messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+    // Send "@" message without showing it in the UI (addUserMessage = false)
+    await sendChatRequest("@", history, false);
+  };
+
   return (
     <div className="flex h-screen flex-col bg-background">
       {/* Header */}
-      <header className="flex items-center justify-between border-b px-4 py-3">
-        <h1 className="text-xl font-semibold text-foreground">TruChat</h1>
+      <header className="flex items-center border-b px-4 py-3">
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleReset} disabled={isLoading}>
+            Reset
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleRAG} disabled={isLoading}>
+            RAG
+          </Button>
+        </div>
+        <h1 className="flex-1 text-center text-xl font-semibold text-foreground">TruChat</h1>
+        <div className="w-[120px]"></div>
       </header>
 
       {/* Messages Area */}
@@ -271,7 +239,10 @@ const Index = () => {
                   }`}
                 >
                   {message.role === "assistant" ? (
-                    renderMarkdown(message.content)
+                    <div
+                      className="prose prose-sm dark:prose-invert max-w-none"
+                      dangerouslySetInnerHTML={{ __html: marked.parse(message.content) as string }}
+                    />
                   ) : (
                     <p className="whitespace-pre-wrap">{message.content}</p>
                   )}
@@ -296,18 +267,7 @@ const Index = () => {
 
       {/* Input Area */}
       <div className="border-t p-4">
-        <div className="mx-auto max-w-3xl space-y-2">
-          {isLoading && (
-            <div className="flex justify-center">
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={handleStopGeneration}
-              >
-                Stop
-              </Button>
-            </div>
-          )}
+        <div className="mx-auto max-w-3xl">
           <form
             onSubmit={handleSendMessage}
             className="flex gap-2"
@@ -320,22 +280,40 @@ const Index = () => {
               disabled={isLoading}
               className="flex-1"
             />
-            <Button type="submit" disabled={isLoading || !inputValue.trim()}>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+            {isLoading ? (
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={handleStopGeneration}
               >
-                <path d="m22 2-7 20-4-9-9-4Z" />
-                <path d="M22 2 11 13" />
-              </svg>
-            </Button>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <rect x="6" y="6" width="12" height="12" rx="1" />
+                </svg>
+              </Button>
+            ) : (
+              <Button type="submit" disabled={!inputValue.trim()}>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="m22 2-7 20-4-9-9-4Z" />
+                  <path d="M22 2 11 13" />
+                </svg>
+              </Button>
+            )}
           </form>
         </div>
       </div>
