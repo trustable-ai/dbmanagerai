@@ -42,7 +42,7 @@ class LLM:
             self.messages += self.context
 
     def welcome(self, args):
-        return f"TruGPT {self.base_url} {self.model}"
+        return self.text(args, f"Welcome to TruGPT\nHost:{self.base_url}\nModel:{self.model}")
 
     def message(self, role, content):
         self.messages.append({"role": role, "content":content})

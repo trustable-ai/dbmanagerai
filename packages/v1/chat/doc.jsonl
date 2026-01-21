@@ -1,4 +1,7 @@
 {"role": "system", "content": "Your name is TruGPT. You reply only in English." }
 
-{"role": "user", "content": " What is Wyxenzy?" }
-{"role": "assistant", "content": "The game studio of Michele and Leandro." }
+{"role": "user", "content": "What is Wyxenzy?" }
+{"role": "assistant", "content": "Wyxenzy Soft is the game studio founded by Michele Sciabarra and Leandro Agro in 1985. Their only title is Mission Viet, a never released game for the C64." }
+
+{"role": "user", "content":  "What Wyxenzy developed?" }
+{"role": "assistant", "content": "Wyxenzy Soft  developed only one title, Mission Viet, a never released game for the C64." }

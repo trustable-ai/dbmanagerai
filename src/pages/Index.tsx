@@ -94,25 +94,23 @@ const Index = () => {
     scrollToBottom();
   }, [messages]);
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputValue.trim() || isLoading) return;
+  // Send a chat request (reusable for both initial load and user messages)
+  const sendChatRequest = async (
+    userInput: string,
+    history: { role: string; content: string }[],
+    addUserMessage: boolean = true
+  ) => {
+    if (isLoading) return;
 
-    const userInput = inputValue.trim();
-    const userMessage: Message = {
-      id: Date.now(),
-      role: "user",
-      content: userInput,
-    };
+    if (addUserMessage && userInput) {
+      const userMessage: Message = {
+        id: Date.now(),
+        role: "user",
+        content: userInput,
+      };
+      setMessages((prev) => [...prev, userMessage]);
+    }
 
-    // Build conversation history from existing messages (before adding current user message)
-    const history = messages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInputValue("");
     setIsLoading(true);
 
     // Create placeholder for assistant message
@@ -209,6 +207,27 @@ const Index = () => {
       setIsLoading(false);
       abortControllerRef.current = null;
     }
+  };
+
+  // Send initial request with empty input on component mount
+  useEffect(() => {
+    sendChatRequest("", [], false);
+  }, []);
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputValue.trim() || isLoading) return;
+
+    const userInput = inputValue.trim();
+
+    // Build conversation history from existing messages (before adding current user message)
+    const history = messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    setInputValue("");
+    await sendChatRequest(userInput, history, true);
   };
 
   const handleStopGeneration = () => {
