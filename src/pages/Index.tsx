@@ -61,8 +61,10 @@ const Index = () => {
     abortControllerRef.current = new AbortController();
 
     try {
+      // Extract hostname from current URL (e.g., "pimchat" from "pimchat.example.com")
+      const hostname = window.location.hostname.split('.')[0];
       const streamUrl = import.meta.env.VITE_STREAM || "";
-      const endpoint = streamUrl ? `${streamUrl}/web/truchat/v1/chat` : "/web/truchat/v1/chat";
+      const endpoint = streamUrl ? `${streamUrl}/web/${hostname}/v1/chat` : `/web/${hostname}/v1/chat`;
 
       const response = await fetch(endpoint, {
         method: "POST",

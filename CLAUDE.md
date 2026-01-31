@@ -5,7 +5,7 @@ Implement requests in python
 
 Only modify the code in packages/v1/chat/*.py
 
-Ignore everything ense
+Ignore everything else
 
 Copy data files (json and jsonl) in  packages/v1/chat
 

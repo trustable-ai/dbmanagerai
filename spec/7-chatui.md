@@ -30,7 +30,7 @@ where <role> is either "user"  or "assistant"
 
 it should send all the history of the request made 
 
-# ansert
+# answer
 
 Expect the result to be a stream ,
 
