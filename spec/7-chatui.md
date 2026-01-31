@@ -5,13 +5,18 @@ Implement the home page as a Chat User Interface.
 
 # input
 
+<hostname> is obtained taking the domain form the url,
+splitting "." and taking the first element
+
 The user will write the input in the text area
 
 when you press enter or click the arrow
 
+
 and it will sent a POST request at the endpoint
-point by VITE_STREAM + `/web/truchat/v1/chat`
-with content type: applition/json
+point by VITE_STREAM + `/web/<hostname>/v1/chat`
+with content type: application/json 
+
 
 in format:
 `

@@ -31,5 +31,4 @@ Display the rendered HTML in the response div (updating as new chunks arrive)
 
 4. Interruption Control
 
-While the AI is responding, display a "Stop" button at the bottom
-If the user clicks the stop button, abort the streaming request immediately
+While the AI is responding, display a "Stop" button at the bottom If the user clicks the stop button, abort the streaming request immediately
