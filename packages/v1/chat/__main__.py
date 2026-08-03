@@ -2,8 +2,8 @@
 #--web true
 #--timeout 600000
 #--param AI_API_KEY "$AI_API_KEY"
-#--param AI_BASE_URL "AI_BASE_URL"
-#--param AI_MODEL "$AI_MODEL"
+#--param AI_BASE_URL "$AI_BASE_URL"
+#--param AI_CHAT_MODEL "$AI_CHAT_MODEL"
 
 import chat
 def main(args):
