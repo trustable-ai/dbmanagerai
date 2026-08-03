@@ -5,22 +5,14 @@ Implement the home page as a Chat User Interface.
 
 # input
 
-<hostname> is obtained taking the domain form the url,
-splitting "." and taking the first element
 
-The user will write the input in the text area
-
-when you press enter or click the arrow
-
-
-and it will sent a POST request at the endpoint
-point by VITE_STREAM + `/web/<hostname>/v1/chat`
-with content type: application/json 
-
+The user will write the input in the text area when you press enter or click the arrow
+it will sent a POST request at the endpoint in current host  `/stream/web/v1/chat`
+with content type: application/json
 
 in format:
 `
-{ 
+{
     "input": <user input>,
     "message": <messages>
 }
@@ -31,15 +23,16 @@ where <messages> is an array of
 ```
 { "role": <role>, "content": <content>}
 ```
+
 where <role> is either "user"  or "assistant"
 
-it should send all the history of the request made 
+it should send all the history of the request made
 
 # answer
 
 Expect the result to be a stream ,
 
-- interpret the stream as  markdown 
+- interpret the stream as  markdown
 - use marked with tables enabled.
 - render the resul in the result bubbl while it is returned.
 

@@ -1,9 +1,9 @@
 #--kind python:default
 #--web true
 #--timeout 600000
-#--param OPENAI_API_KEY "$OPENAI_API_KEY"
-#--param OPENAI_BASE_URL "$OPENAI_BASE_URL"
-#--param OPENAI_MODEL "$OPENAI_MODEL"
+#--param AI_API_KEY "$AI_API_KEY"
+#--param AI_BASE_URL "AI_BASE_URL"
+#--param AI_MODEL "$AI_MODEL"
 
 import chat
 def main(args):

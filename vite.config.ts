@@ -23,9 +23,13 @@ export default defineConfig(({ mode }) => {
       proxy: {
         "/api/my": {
           target: env.OPS_HOST || env.OPSDEV_HOST,
-        changeOrigin: true
-      }
-    },
+          changeOrigin: true
+        },
+        "/stream": {
+          target: env.OPS_HOST || env.OPSDEV_HOST,
+          changeOrigin: true
+        }
+      },
     host: "0.0.0.0",
     port: 5173,
     allowedHosts: true,

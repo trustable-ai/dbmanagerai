@@ -24,9 +24,9 @@ def loader(file):
 class LLM:
     def __init__(self, args):
         # params
-        self.base_url  = args.get("OPENAI_BASE_URL", os.getenv("OPENAI_BASE_URL", "missing OPENAI_BASE_URL"))
-        self.api_key = args.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", "missing OPENAI_API_KEY"))
-        self.model = args.get("OPENAI_MODEL", os.getenv("OPENAI_MODEL", "missing OPENAI_MODEL"))
+        self.base_url  = args.get("AI_BASE_URL", os.getenv("AI_BASE_URL", "missing AI_BASE_URL"))
+        self.api_key = args.get("AI_API_KEY", os.getenv("AI_API_KEY", "missing AI_API_KEY"))
+        self.model = args.get("AI_CHAT_MODEL", os.getenv("AI_CHAT_MODEL", "missing AI_CHAT_MODEL"))
         self.rate = 0.01
         # urls
         self.ai = OpenAI(base_url=self.base_url, api_key=self.api_key)
